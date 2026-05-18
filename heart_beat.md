@@ -23,3 +23,4 @@
 - [x] Write DEV.to Build Track submission draft post (`submissions/build_track.md`).
 - [x] Write DEV.to Write Track submission draft post (`submissions/write_track.md`).
 - [x] Run end-to-end verification and compile `walkthrough.md`.
+- [x] Use `gh` to set up initial repository and commit/push to a public repository (`gemma4_contest`).
