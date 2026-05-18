@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GemmaAudit — Gemma 4-Powered Offline Legacy Code Intelligence & Lineage Agent</title>
+    <!-- Fonts & Styling Libraries -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Outfit:wght@100..900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- D3.js for high-fidelity interactive SVG topology modeling -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="glass-bg-container">
+        <!-- Floating Ambient Glows -->
+        <div class="glow-orb orb-1"></div>
+        <div class="glow-orb orb-2"></div>
+        <div class="glow-orb orb-3"></div>
+        
+        <!-- App Header Navbar -->
+        <header class="app-header">
+            <div class="header-logo">
+                <i class="fa-solid fa-microchip-heading logo-icon"></i>
+                <div class="brand-info">
+                    <h1>Gemma<span>Audit</span></h1>
+                    <span class="badge">V4.0 Offline Agent</span>
+                </div>
+            </div>
+            
+            <div class="header-controls">
+                <!-- Track 1 Model Selector -->
+                <div class="control-group">
+                    <label for="model-selector"><i class="fa-solid fa-brain"></i> Model Selection:</label>
+                    <select id="model-selector" class="control-select">
+                        <option value="gemma4-2b" selected>Gemma 4 2B/4B (On-Device/Edge)</option>
+                        <option value="gemma4-26b">Gemma 4 26B (High-Throughput MoE)</option>
+                        <option value="gemma4-31b">Gemma 4 31B (Dense Auditing Engine)</option>
+                    </select>
+                </div>
+                
+                <!-- Thinking Mode Slider Toggle -->
+                <div class="control-group switch-group">
+                    <div class="switch-label">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        <span>Deep Thinking Mode</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="thinking-mode-toggle" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Dashboard Workspace -->
+        <main class="workspace-grid">
+            <!-- LEFT PANEL: Legacy Inventory & Agent Chat -->
+            <section class="left-panel flex-column">
+                <!-- Legacy Module Explorer -->
+                <div class="panel-section legacy-explorer flex-column">
+                    <div class="section-header">
+                        <h2><i class="fa-solid fa-folder-tree"></i> Legacy Inventory</h2>
+                        <span class="count-badge" id="module-count">0 Modules</span>
+                    </div>
+                    <div class="explorer-scroll-area" id="module-list">
+                        <!-- Populated by JavaScript -->
+                        <div class="loading-placeholder">
+                            <i class="fa-solid fa-spinner fa-spin"></i> Loading legacy inventory...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Grounded Audit Agent Chat -->
+                <div class="panel-section agent-chat flex-column">
+                    <div class="section-header">
+                        <h2><i class="fa-solid fa-user-astronaut"></i> Code Intelligence Agent</h2>
+                        <span class="status-indicator"><span class="dot pulse"></span> Grounded</span>
+                    </div>
+                    <!-- Messages Thread Area -->
+                    <div class="chat-thread-container" id="chat-thread">
+                        <div class="chat-bubble bot-message">
+                            <div class="message-sender">
+                                <i class="fa-solid fa-microchip-heading"></i>
+                                <span>GemmaAudit Agent</span>
+                            </div>
+                            <div class="message-content">
+                                <p>Welcome to **GemmaAudit**! I am an offline-capable legacy modernization agent powered by the **Gemma 4** model parameter sets.</p>
+                                <p>I am grounded in your static-analysis dependency graphs. Ask me to:</p>
+                                <ul>
+                                    <li>Provide an <strong>overview</strong> of the mainframe architecture.</li>
+                                    <li>Find <strong>high-risk</strong> modules and identify refactoring bottlenecks.</li>
+                                    <li><strong>Read</strong> and auto-translate legacy procedures into clean modern Python.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Chat Input form -->
+                    <form class="chat-input-area" id="chat-form">
+                        <input type="text" id="chat-input" placeholder="Ask Gemma to audit legacy systems..." required autocomplete="off">
+                        <button type="submit" class="chat-submit-btn">
+                            <i class="fa-solid fa-paper-plane"></i>
+                        </button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- CENTER PANEL: Interactive Topology Visualizer -->
+            <section class="center-panel flex-column">
+                <div class="panel-section visualizer flex-column">
+                    <div class="section-header">
+                        <div class="header-left">
+                            <h2><i class="fa-solid fa-diagram-project"></i> Code Topology & Lineage Network</h2>
+                            <span class="active-scope" id="active-graph-scope">System Overview</span>
+                        </div>
+                        <button class="glass-btn btn-small" id="reset-graph-btn" style="display: none;">
+                            <i class="fa-solid fa-arrow-left"></i> System Overview
+                        </button>
+                    </div>
+                    
+                    <!-- D3 Interactive Graph Container -->
+                    <div class="graph-viewport-wrapper">
+                        <div id="d3-graph-canvas"></div>
+                        
+                        <!-- Zoom and controls HUD -->
+                        <div class="graph-hud-controls">
+                            <button id="zoom-in-btn" title="Zoom In"><i class="fa-solid fa-plus"></i></button>
+                            <button id="zoom-out-btn" title="Zoom Out"><i class="fa-solid fa-minus"></i></button>
+                            <button id="fit-screen-btn" title="Fit to Screen"><i class="fa-solid fa-expand"></i></button>
+                        </div>
+
+                        <!-- Graph Legend: Functionally Clustered -->
+                        <div class="graph-legend">
+                            <div class="legend-section-title"><i class="fa-solid fa-code-branch"></i> Logic & Execution</div>
+                            <div class="legend-item"><span class="legend-dot color-program"></span> Program (Control)</div>
+                            <div class="legend-item"><span class="legend-dot color-paragraph"></span> Paragraph (Logic Segment)</div>
+                            
+                            <div class="legend-section-separator"></div>
+                            
+                            <div class="legend-section-title"><i class="fa-solid fa-memory"></i> State & Memory</div>
+                            <div class="legend-item"><span class="legend-dot color-variable"></span> Local Registers & Vars</div>
+                            
+                            <div class="legend-section-separator"></div>
+                            
+                            <div class="legend-section-title"><i class="fa-solid fa-database"></i> Storage Boundaries</div>
+                            <div class="legend-item"><span class="legend-dot color-file"></span> Physical Files</div>
+                            <div class="legend-item"><span class="legend-dot color-table"></span> Relational Tables</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RIGHT PANEL: Live Auditing Code Viewer & Translation Blueprint -->
+            <section class="right-panel flex-column">
+                <div class="panel-section code-viewer flex-column">
+                    <div class="section-header">
+                        <h2><i class="fa-solid fa-code"></i> Modernization Hub</h2>
+                        <div class="hub-tabs">
+                            <button class="hub-tab active" data-tab="legacy-src-tab" id="tab-legacy">Legacy Code</button>
+                            <button class="hub-tab" data-tab="modern-blueprint-tab" id="tab-blueprint">Modern Blueprint</button>
+                        </div>
+                    </div>
+
+                    <!-- Tabs Content Container -->
+                    <div class="tab-viewport flex-column">
+                        <!-- Legacy Source Tab -->
+                        <div class="tab-content active flex-column" id="legacy-src-tab">
+                            <div class="viewer-meta">
+                                <span class="file-name-label" id="legacy-file-name">Select a program to view source code</span>
+                                <span class="loc-count" id="legacy-loc">0 LOC</span>
+                            </div>
+                            <pre class="code-editor-box"><code id="legacy-code-box" class="language-cobol">* SELECT A LEGACY MODULE FROM THE EXPLORER
+* OR CLICK A GRAPH NODE TO AUDIT SOURCE CODE LIVE.</code></pre>
+                        </div>
+
+                        <!-- Modern Blueprint Tab -->
+                        <div class="tab-content flex-column" id="modern-blueprint-tab">
+                            <div class="viewer-meta">
+                                <span class="file-name-label" id="blueprint-file-name">Modern PyService Equivalent</span>
+                                <span class="loc-count status-clean"><i class="fa-solid fa-shield-halved"></i> 100% Stateless</span>
+                            </div>
+                            <pre class="code-editor-box"><code id="blueprint-code-box" class="language-python"># SELECT A LEGACY MODULE OR PARAGRAPH
+# TO GENERATE STATELESS PYTHON MICROSERVICES equivalent.</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Script loading -->
+    <script src="app.js"></script>
+</body>
+</html>
