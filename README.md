@@ -2,7 +2,7 @@
 
 ## Submission Category: Write About Gemma 4
 
-![GemmaAudit Interface Demo](submissions/assets/gemma_audit_demo.webp)
+![GemmaAudit Interface Demo](submissions/assets/clustered_topology_demo.webp)
 
 ---
 
