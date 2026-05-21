@@ -14,7 +14,10 @@ const colors = {
     paragraph: "#ec4899",
     variable: "#eab308",
     file: "#06b6d4",
-    table: "#3b82f6"
+    table: "#3b82f6",
+    job: "#f97316",       // JCL Job — orange, top-of-stack orchestrator
+    step: "#fb923c",      // JCL Step — lighter orange, sub-step
+    dataset: "#22d3ee"    // Physical DSN — cyan-teal, distinguished from .DAT files
 };
 
 // Initialize Dashboard
@@ -451,8 +454,10 @@ function renderD3Graph(graphData) {
     // Add main node body circle
     node.append("circle")
         .attr("r", d => {
+            if (d.type === "job") return 13;
+            if (d.type === "step") return 9;
             if (d.type === "program") return 11;
-            if (d.type === "file" || d.type === "table") return 9;
+            if (d.type === "file" || d.type === "table" || d.type === "dataset") return 9;
             return 7;
         })
         .attr("fill", d => colors[d.type] || "#64748b")
@@ -475,15 +480,17 @@ function renderD3Graph(graphData) {
         
     // Define functional cluster center coordinates
     const getClusterX = d => {
-        if (d.type === "program" || d.type === "paragraph") return width * 0.33; // Logic: Left Area
-        if (d.type === "variable") return width * 0.67; // Memory State: Right Area
-        return width * 0.5; // Storage I/O: Bottom-Center Area
+        if (d.type === "job" || d.type === "step") return width * 0.5;            // Orchestration: top-center
+        if (d.type === "program" || d.type === "paragraph") return width * 0.33;   // Logic: Left Area
+        if (d.type === "variable") return width * 0.67;                            // Memory State: Right Area
+        return width * 0.5;                                                        // Storage I/O: Bottom-Center
     };
-    
+
     const getClusterY = d => {
+        if (d.type === "job" || d.type === "step") return height * 0.15;           // Orchestration: top tier
         if (d.type === "program" || d.type === "paragraph") return height * 0.45;
         if (d.type === "variable") return height * 0.45;
-        return height * 0.72; // Position Storage lower down
+        return height * 0.78;                                                      // Storage / Datasets: bottom
     };
 
     // 3. Setup Simulation Forces

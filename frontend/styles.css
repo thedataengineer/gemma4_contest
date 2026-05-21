@@ -19,6 +19,9 @@
     --color-variable: #eab308;
     --color-file: #06b6d4;
     --color-table: #3b82f6;
+    --color-job: #f97316;
+    --color-step: #fb923c;
+    --color-dataset: #22d3ee;
     
     --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -719,6 +722,9 @@ input:checked + .slider:before {
 .color-variable { background-color: var(--color-variable); box-shadow: 0 0 5px var(--color-variable); }
 .color-file { background-color: var(--color-file); box-shadow: 0 0 5px var(--color-file); }
 .color-table { background-color: var(--color-table); box-shadow: 0 0 5px var(--color-table); }
+.color-job { background-color: var(--color-job); box-shadow: 0 0 5px var(--color-job); }
+.color-step { background-color: var(--color-step); box-shadow: 0 0 5px var(--color-step); }
+.color-dataset { background-color: var(--color-dataset); box-shadow: 0 0 5px var(--color-dataset); }
 
 /* SVG Node and Link Styles */
 .graph-link {

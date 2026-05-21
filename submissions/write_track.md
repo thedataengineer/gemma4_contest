@@ -20,11 +20,11 @@ Here is exactly what I learned, how I handled the transition, and how running Ge
 
 ---
 
-### The Hack: Open Source, Academic Papers, and Unsloth
+### The Hack: ANTLR4, Academic Papers, and Unsloth
 
-My journey started with a classic developer's approach. I grabbed a standard, off-the-shelf open-source COBOL parser to see if I could extract the code's syntax tree (AST). But as anyone who has worked with legacy systems knows, off-the-shelf tools get you about 60% of the way there before choking on real-world mainframe quirks.
+My journey started with a classic developer's approach: I tried off-the-shelf open-source COBOL parsers to see if I could extract the code's syntax tree (AST). But as anyone who has worked with legacy systems knows, generic tools get you about 60% of the way there before choking on real-world mainframe quirks — fixed-format indicator areas, sequence numbers, and line continuations that follow the **FIPS 21-2 / ANSI X3.23 COBOL standard**.
 
-To bridge the gap, I started digging through academic papers on legacy reverse-engineering. I wanted to see how researchers were structurally modeling these systems. Using their papers as a blueprint, I iterated on the open-source parser, writing custom logic to map global memory lineage and system-level database calls.
+To bridge the gap, I started digging through academic papers on legacy reverse-engineering and built a custom **ANTLR4-based COBOL-85 grammar** with a FIPS 21-2 fixed-format preprocessor. On top of that, I wrote AST visitors that map global memory lineage and system-level database calls into a Knowledge Graph with semantic edge types: `CALLS`, `PERFORMS`, `JUMPS_TO` (GOTO), `MOVES_TO` (data lineage), `READS_FROM`, and `WRITES_TO`. The engine was stress-tested against a **6,191-file COBOL corpus** — NIST test suites, AWS CardDemo, and assorted real-world mainframe samples — and held a **99.90% parse-success rate** (6,185 passed; the 6 failures were all the same pair of pathologically nested NIST conformance files that overflow Python's recursion limit). That run produced **5,240 per-program Knowledge Graph JSON artifacts** for the Graph-RAG layer to query.
 
 But parsing the code was only half the battle. I still needed a local intelligence engine to translate that parsed structural context into clean, modernized Python microservices. 
 
@@ -36,80 +36,129 @@ By utilizing Unsloth’s optimized **4-bit QLoRA quantizations**, I was able to 
 
 ### The Nightmare of Global Mutability
 
-To understand why legacy COBOL code is so difficult to parse and translate, look at a standard compound interest calculator. If you're a modern JS or Python developer, this memory layout will probably make your eyes water:
+To understand why legacy COBOL code is so difficult to parse and translate, look at a standard mortgage amortization calculator — one of the actual sample modules we audit. If you're a modern JS or Python developer, this memory layout will probably make your eyes water:
 
 ```cobol
 000100 IDENTIFICATION DIVISION.
-000200 PROGRAM-ID. COMP-INTEREST.
+000200 PROGRAM-ID. MORTGAGE-CALC.
 000300 ENVIRONMENT DIVISION.
 000400 DATA DIVISION.
 000500 WORKING-STORAGE SECTION.
-000600 01 WS-CALC-VARS.
-000700    05 WS-BALANCE         PIC 9(7)V99.
-000800    05 WS-RATE            PIC 9(2)V999.
-000900    05 WS-YEARS           PIC 9(2) VALUE 0.
-001000    05 WS-COUNTER         PIC 9(2) VALUE 0.
-001100    05 WS-ACCUMULATOR     PIC 9(9)V99 VALUE 0.0.
-001200 EXEC SQL
-001300    INCLUDE SQLCA
-001400 END-EXEC.
-001500 LINKAGE SECTION.
-001600 01 LK-INPUT-PARAMS.
-001700    05 LK-ACC-NUM         PIC X(10).
-001800 01 LK-OUTPUT-RESULT     PIC 9(9)V99.
-001900 PROCEDURE DIVISION USING LK-INPUT-PARAMS, LK-OUTPUT-RESULT.
-002000 0000-MAIN.
-002100     EXEC SQL
-002200        SELECT BALANCE, INTEREST_RATE, TERM_YEARS 
-002300        INTO :WS-BALANCE, :WS-RATE, :WS-YEARS
-002400        FROM DB2_ACCOUNT_TABLE 
-002500        WHERE ACCOUNT_NUMBER = :LK-ACC-NUM
-002600     END-EXEC.
-002700     IF SQLCODE = 0
-002800        PERFORM 1000-INITIALIZE
-002900        PERFORM 2000-PROCESS-COMPOUND VARYING WS-COUNTER FROM 1 BY 1 
-003000                UNTIL WS-COUNTER > WS-YEARS
-003100        MOVE WS-ACCUMULATOR TO LK-OUTPUT-RESULT
-003200     ELSE
-003300        MOVE 0.0 TO LK-OUTPUT-RESULT
-003400     END-IF.
-003500     GOBACK.
-003600 1000-INITIALIZE.
-003700     MOVE WS-BALANCE TO WS-ACCUMULATOR.
-003800 2000-PROCESS-COMPOUND.
-003900     COMPUTE WS-ACCUMULATOR = WS-ACCUMULATOR * (1.0 + (WS-RATE / 100.0)).
+000600 01 WS-CALC-WORK-AREAS.
+000700    05 WS-MONTHS          PIC 9(4) VALUE 0.
+000800    05 WS-TEMP-VAL        PIC 9(9)V9999 VALUE 0.0.
+000900    05 WS-DIVISOR         PIC 9(9)V9999 VALUE 0.0.
+001000    05 WS-RATE-FACTOR     PIC 9(9)V9999 VALUE 0.0.
+001100    05 WS-LOAN-BALANCE    PIC 9(9)V99 VALUE 0.0.
+001200 LINKAGE SECTION.
+001300 01 LK-CLIENT-RECORD.
+001400    05 LK-ACC-NUM         PIC X(10).
+001500    05 LK-BALANCE         PIC 9(7)V99.
+001600    05 LK-RATE            PIC 9(2)V999.
+001700 01 LK-INTEREST-OUT       PIC 9(7)V99.
+001800 01 LK-STATUS-CODE        PIC X(2).
+001900 PROCEDURE DIVISION USING LK-CLIENT-RECORD, LK-INTEREST-OUT, LK-STATUS-CODE.
+002000 0000-CALCULATE.
+002100     MOVE "00" TO LK-STATUS-CODE
+002200     IF LK-RATE <= 0.0 OR LK-RATE > 30.00
+002300        MOVE "01" TO LK-STATUS-CODE
+002400        PERFORM 8000-HANDLE-INVALID-RATE
+002500     ELSE
+002600        IF LK-BALANCE <= 0.0
+002700           MOVE "02" TO LK-STATUS-CODE
+002800           PERFORM 8100-HANDLE-INVALID-BALANCE
+002900        ELSE
+003000           PERFORM 1000-PROCESS-CALCULATIONS
+003100        END-IF
+003200     END-IF
+003300     GOBACK.
+003400 2000-COMPUTE-RATE-FACTOR.
+003500     COMPUTE WS-RATE-FACTOR = LK-RATE / 1200.0.
+003600 3000-COMPUTE-MONTHLY-TERM.
+003700     MOVE 360 TO WS-MONTHS.
+003800     COMPUTE WS-TEMP-VAL = (1.0 + WS-RATE-FACTOR).
+003900     COMPUTE WS-DIVISOR = 1.0.
+004000     PERFORM VARYING WS-MONTHS FROM 360 BY -1 UNTIL WS-MONTHS <= 0
+004100        COMPUTE WS-DIVISOR = WS-DIVISOR * WS-TEMP-VAL
+004200     END-PERFORM.
+004300 4000-APPLY-AMORTIZATION-FORMULA.
+004400     COMPUTE LK-INTEREST-OUT = LK-BALANCE * (WS-RATE-FACTOR * WS-DIVISOR) / (WS-DIVISOR - 1.0).
 ```
 
 There are three major pain points here:
-1.  **Shared Global Memory**: Everything in the `WORKING-STORAGE SECTION` is a global variable. When `2000-PROCESS-COMPOUND` mutates `WS-ACCUMULATOR`, it's modifying shared state directly. If you try to run multiple calculations in parallel, you'll run face-first into race conditions.
-2.  **Database Coupling**: The database query is welded directly to the code thread via embedded SQL (`EXEC SQL ...`). You can't test the business logic without mocking a database connection.
-3.  **The Hidden Orchestration (JCL)**: COBOL almost never runs alone. In a real mainframe environment, it sits behind **JCL (Job Control Language)** batch files. JCL handles the "plumbing"—scheduling program steps (`EXEC PGM=COMP-INTEREST`) and mapping physical storage datasets to logical DD handles. Modernizing the program requires parsing both the outer JCL script and the inner COBOL logic to preserve context.
+1.  **Shared Global Memory**: Everything in the `WORKING-STORAGE SECTION` is a global variable. When `3000-COMPUTE-MONTHLY-TERM` mutates `WS-DIVISOR` inside a `PERFORM VARYING` loop, it's modifying shared state directly. If you try to run multiple calculations in parallel, you'll run face-first into race conditions.
+2.  **Procedural Paragraph-Jumping**: The control flow ricochets across paragraphs via `PERFORM 8000-HANDLE-INVALID-RATE`, `PERFORM 1000-PROCESS-CALCULATIONS`, `PERFORM 2000-COMPUTE-RATE-FACTOR`. There's no clean function-level isolation — every paragraph reads and writes the same shared linkage and working-storage state.
+3.  **The Hidden Orchestration (JCL + External CALL Chains + Embedded SQL)**: COBOL almost never runs alone. In a real mainframe environment, `MORTGAGE-CALC` is invoked by `ACC-UPDATE` via `CALL "MORTGAGE-CALC" USING MASTER-RECORD, WS-TOTAL-INTEREST, WS-CALC-STATUS`; that `ACC-UPDATE` is itself scheduled by a **JCL (Job Control Language)** batch script — e.g. `NIGHTLY.JCL` has `//STEP020 EXEC PGM=ACC-UPDATE,COND=(0,LT,STEP010)` with `//MASTER DD DSN=PROD.FIN.MASTER.DAT,DISP=SHR` mapping the logical file handle to the physical dataset; and adjacent modules like `DB-INTERFACE` weld DB2 queries directly into the code thread via `EXEC SQL ... END-EXEC`. Modernizing one program requires tracing the full JCL → COBOL → SQL stack to preserve context — exactly what GemmaAudit's two-stage JCL parser + ANTLR4 COBOL grammar capture into a unified Knowledge Graph.
+
+---
+
+### Parsing JCL Without Pretending: Regex Skeleton + Local Gemma 4 Brain
+
+Most "AI-driven mainframe modernization" demos quietly skip JCL — it's annoying. The columnar fixed-format, the cryptic single-letter dispositions (`DISP=(NEW,CATLG,DELETE)`), the continuation rules (column 3 must be blank to mark a continuation line), and the fact that a single JCL step like `//STEP020 EXEC PGM=ACC-UPDATE,COND=(0,LT,STEP010)` encodes *both* a structural fact (this step invokes the `ACC-UPDATE` program) *and* a runtime condition (only run if STEP010 returned RC=0) that pure regex can't truly understand.
+
+So I built a **two-stage JCL parser** that pairs deterministic regex with the same local Gemma 4 model that powers the chat agent:
+
+**Stage 1 — Deterministic Regex Skeleton.** A small set of compiled regexes pulls out `//<jobname> JOB`, `//<step> EXEC PGM=<pgm>` / `EXEC PROC=<proc>`, and `//<ddname> DD DSN=<dataset>,DISP=...` statements. A continuation-coalescer joins multi-line statements (the column-3-blank rule), comments (`//*`) are skipped, and inline data streams (`//SYSIN DD *` followed by raw lines until `/*`) are recognised but their payloads ignored. This stage is fast, offline, and *cannot fail* — even if the local LLM server isn't running, the structural skeleton still comes out clean.
+
+**Stage 2 — Local LLM Semantic Enrichment.** For each parsed step, we send a tight prompt to the local Gemma 4 model via Ollama's OpenAI-compatible endpoint:
+
+```text
+You are a terse mainframe modernization analyst. In ONE sentence (max 25 words),
+describe the BUSINESS PURPOSE of this JCL step. Output only the sentence.
+
+Job: NIGHTLY — END-OF-DAY MASTER BATCH
+Step name: STEP020
+Invokes: program=ACC-UPDATE
+DD statements: MASTER=PROD.FIN.MASTER.DAT, AUDIT=PROD.FIN.AUDIT.LOG
+```
+
+The model fires back something like *"Runs the nightly customer master file audit and amortization pass, writing every account mutation to a freshly catalogued AUDIT.LOG"* — which gets attached to the step's `intent` field on its KG node. This is what regex categorically cannot do: regex sees `STEP020 EXEC PGM=ACC-UPDATE` as a string; Gemma 4 sees it as "the nightly account audit step."
+
+Every parsed Job becomes a `job` node, every step becomes a `step` node with sequential `next_step` edges, every `DSN=` resolves to a deduplicated `dataset` node, and `Step → EXECUTES → Program` edges fuse the JCL orchestration layer directly with the ANTLR4-extracted COBOL Knowledge Graph. The agent gets a new tool — `get_jcl_orchestrations(program_name=...)` — so when a user asks Gemma 4 *"how is MORTGAGE-CALC actually invoked in production?"*, the model traces `JOB_NIGHTLY → STEP020 → ACC-UPDATE → CALL → MORTGAGE-CALC` end-to-end without hallucinating.
+
+Critically, this is the same pattern on **both repos**: the cobol-parser side ships `llm_intent.py`, a sibling enrichment pass that annotates each COBOL Paragraph node in the existing KG JSON artifacts with business-intent labels via the same local Ollama endpoint. Same model server, same graceful fallback, same air-gapped guarantee — applied at two different levels of the call stack.
 
 ---
 
 ### Exposing the Monologue: Gemma 4's "Deep Thinking"
 
-One of my favorite additions to Gemma 4 is its capacity for structured, step-by-step reasoning. To leverage this, I configured the agent with a custom **Deep Thinking Mode** that forces the model to dump its internal monologue inside an XML `<thinking>` block. 
+One of my favorite additions to Gemma 4 is its capacity for structured, step-by-step reasoning. To leverage this, I configured the agent with a custom **Deep Thinking Mode** that forces the model to dump its internal monologue inside an XML `<thinking>` block.
 
-Instead of jumping straight to the output, the model has to talk to itself first. Here is what that reasoning path actually looks like when analyzing our compound interest COBOL file:
+Instead of jumping straight to the output, the model has to talk to itself first. Here is what that reasoning path actually looks like when analyzing our mortgage amortization COBOL file:
 
 ```xml
 <thinking>
-Alright, let's break down this legacy COBOL module. 
+Alright, let's break down this legacy COBOL module.
 
 1. First Glance:
-   - Program name is 'COMP-INTEREST.CBL'.
-   - It takes an account number as input via LINKAGE, queries a DB2 database, compounds interest in a loop, and passes the final balance back.
+   - Program name is 'MORTGAGE-CALC.CBL'.
+   - It receives a client record (account number, balance, rate) via LINKAGE,
+     validates the inputs, runs a 360-iteration PERFORM VARYING loop to build
+     a rate divisor, applies the standard amortization formula, and returns
+     the monthly interest amount plus a status code.
 
 2. Finding the Pain Points:
-   - The embedded SQL (EXEC SQL) binds the database layer directly to the computation. We need to decouple this into a clean repository layer.
-   - Global mutable variables (WS-BALANCE, WS-RATE, WS-YEARS, WS-COUNTER, WS-ACCUMULATOR) are mutated in the perform loop. This is a classic state tracking nightmare.
-   - The loop (2000-PROCESS-COMPOUND) runs years-based compounding. We can translate this into a stateless, closed-form mathematical equation: Principal * (1 + Rate)^Years.
+   - Global mutable variables (WS-RATE-FACTOR, WS-DIVISOR, WS-TEMP-VAL, WS-MONTHS)
+     are mutated across paragraph boundaries. 4000-APPLY-AMORTIZATION-FORMULA
+     silently depends on side effects from 2000-COMPUTE-RATE-FACTOR and
+     3000-COMPUTE-MONTHLY-TERM. Classic state-tracking nightmare.
+   - The PERFORM VARYING loop (3000-COMPUTE-MONTHLY-TERM) reduces to a closed-form
+     exponentiation: WS-DIVISOR = (1 + rate_factor)^360. No need to iterate 360
+     times in modern code — Python's ** operator handles it in O(log n).
+   - Status codes ("00"/"01"/"02"/"88"/"99") are stringly-typed sentinels.
+     These should become typed exceptions or a Pydantic response enum.
 
 3. Formulating the Translation Plan:
-   - Memory Separation: Completely eliminate WORKING-STORAGE state. Encapsulate computation in a pure, stateless function using Python's Decimal class. (Why Decimal? Float precision loss is unacceptable in financial transactions, and COBOL's fixed-point PIC 9(7)V99 maps perfectly to Decimal).
-   - Database Separation: Use FastAPI + Async SQLAlchemy/SQLModel. This decouples database IO from the math.
-   - Interface: Define clean Pydantic request/response schemas to enforce type safety.
+   - Memory Separation: Eliminate WORKING-STORAGE state. Encapsulate the
+     amortization math in a pure, stateless function using Python's Decimal
+     class. (Why Decimal? Float precision loss is unacceptable in financial
+     transactions, and COBOL's fixed-point PIC 9(7)V99 maps perfectly to
+     Decimal with quantize("0.01").)
+   - Validation Separation: Replace IF LK-RATE <= 0.0 OR LK-RATE > 30.00 branch
+     and the 8000-HANDLE-INVALID-RATE paragraph with Pydantic Field constraints
+     (gt=0, le=Decimal("30.0")) that fail fast at the API boundary.
+   - Interface: Define clean Pydantic request/response schemas for the
+     FastAPI entrypoint, so callers get typed errors instead of "01"/"02".
 </thinking>
 ```
 
@@ -121,72 +170,52 @@ When you combine local tool grounding (giving Gemma 4 a secure static parser to 
 
 ```python
 from decimal import Decimal
-from typing import Optional
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, String, Numeric, Integer, select
 
-# 1. Decoupled Postgres DB Layer
-DATABASE_URL = "postgresql+asyncpg://db_user:secure@localhost:5432/finance_db"
-engine = create_async_engine(DATABASE_URL, echo=True)
-AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-Base = declarative_base()
+app = FastAPI(title="Mortgage Amortization Microservice", version="1.0.0")
 
-class DB2AccountRecord(Base):
-    __tablename__ = "db2_account_table"
-    account_number = Column(String(10), primary_key=True, index=True)
-    balance = Column(Numeric(9, 2), nullable=False)
-    interest_rate = Column(Numeric(4, 3), nullable=False)
-    term_years = Column(Integer, nullable=False)
-
-# 2. Pydantic Verification Layers
-class AccountRequest(BaseModel):
+# 1. Pydantic Verification Layer — replaces 8000-HANDLE-INVALID-RATE
+#    and 8100-HANDLE-INVALID-BALANCE paragraphs with declarative constraints.
+class MortgageRequest(BaseModel):
     account_number: str = Field(..., max_length=10, pattern=r"^[A-Z0-9]+$")
+    balance: Decimal      = Field(..., gt=Decimal("0"),  description="Principal balance, maps to LK-BALANCE PIC 9(7)V99")
+    annual_rate: Decimal  = Field(..., gt=Decimal("0"), le=Decimal("30.0"),
+                                  description="Annual interest rate %, maps to LK-RATE PIC 9(2)V999")
+    term_months: int      = Field(default=360, gt=0, le=480,
+                                  description="Loan term in months, maps to WS-MONTHS PIC 9(4)")
 
-class AccountBalanceResponse(BaseModel):
+class MortgageResponse(BaseModel):
     account_number: str
-    initial_balance: Decimal
-    interest_rate: Decimal
-    term_years: int
-    compound_balance: Decimal
+    monthly_payment: Decimal
 
-app = FastAPI(title="Compounding Interest Microservice", version="1.0.0")
-
-# 3. Stateless Compound Interest Engine
-def compute_compound_balance(principal: Decimal, rate: Decimal, years: int) -> Decimal:
+# 2. Stateless Amortization Engine — pure translation of paragraphs
+#    2000-COMPUTE-RATE-FACTOR, 3000-COMPUTE-MONTHLY-TERM, and
+#    4000-APPLY-AMORTIZATION-FORMULA. WORKING-STORAGE globals
+#    (WS-RATE-FACTOR, WS-DIVISOR, WS-TEMP-VAL) are eliminated —
+#    they become locals inside this function.
+def compute_monthly_payment(principal: Decimal, annual_rate: Decimal, months: int) -> Decimal:
     """
-    Stateless translation of 2000-PROCESS-COMPOUND perform-loop.
-    Replaces global state accumulator with pure compounding calculation.
+    Stateless port of MORTGAGE-CALC PROCEDURE DIVISION.
+    The 360-iteration PERFORM VARYING loop collapses to a single
+    closed-form exponentiation — O(log n) instead of O(n).
     """
-    rate_factor = Decimal("1.0") + (rate / Decimal("100.0"))
-    final_balance = principal * (rate_factor ** years)
-    return final_balance.quantize(Decimal("0.01"))
+    rate_factor = annual_rate / Decimal("1200")            # 2000-COMPUTE-RATE-FACTOR
+    divisor     = (Decimal("1") + rate_factor) ** months   # 3000-COMPUTE-MONTHLY-TERM (closed-form)
+    if divisor == Decimal("1"):
+        raise HTTPException(status_code=422, detail="Degenerate rate produces zero divisor")
+    payment     = principal * (rate_factor * divisor) / (divisor - Decimal("1"))  # 4000-APPLY-AMORTIZATION-FORMULA
+    return payment.quantize(Decimal("0.01"))
 
-# 4. REST Entrypoint
-async def get_db_session():
-    async with AsyncSessionLocal() as session:
-        yield session
-
-@app.post("/calculate-amortization", response_model=AccountBalanceResponse)
-async def calculate_amortization(req: AccountRequest, db: AsyncSession = Depends(get_db_session)):
-    query = select(DB2AccountRecord).where(DB2AccountRecord.account_number == req.account_number)
-    result = await db.execute(query)
-    record = result.scalars().first()
-    
-    if not record:
-        raise HTTPException(status_code=404, detail="Account not found in ledger")
-        
-    final_balance = compute_compound_balance(record.balance, record.interest_rate, record.term_years)
-    
-    return AccountBalanceResponse(
-        account_number=record.account_number,
-        initial_balance=record.balance,
-        interest_rate=record.interest_rate,
-        term_years=record.term_years,
-        compound_balance=final_balance
-    )
+# 3. REST Entrypoint — replaces the CALL "MORTGAGE-CALC" USING ... convention
+#    from the parent ACC-UPDATE program with a typed HTTP boundary.
+@app.post("/mortgage/payment", response_model=MortgageResponse)
+async def calculate_payment(req: MortgageRequest):
+    monthly = compute_monthly_payment(req.balance, req.annual_rate, req.term_months)
+    if monthly > req.balance:
+        # Mirrors legacy guard: IF LK-INTEREST-OUT > LK-BALANCE -> MOVE "88" TO LK-STATUS-CODE
+        raise HTTPException(status_code=409, detail="Amortization result exceeds principal")
+    return MortgageResponse(account_number=req.account_number, monthly_payment=monthly)
 ```
 
 ---
@@ -205,12 +234,12 @@ Here is the trade-off matrix I observed when matching Gemma 4 models to my works
 
 #### The Real Game-Changer: Graph-RAG and the 128K Context Window
 
-If you've ever looked at a COBOL monolith, you know they are rarely 40 lines long. A single file can stretch over **5,000 lines of code** containing dense data structures. But when you scale up to a full enterprise migration containing hundreds of inter-connected programs, physical sequential files, and JCL schedules, the raw text easily spans gigabytes—drowning even the most massive context windows.
+If you've ever looked at a COBOL monolith, you know they are rarely 40 lines long. A single file can stretch over **5,000 lines of code** containing dense data structures. But when you scale up to a full enterprise migration containing hundreds of inter-connected programs, physical sequential files, and embedded DB2 schemas, the raw text easily spans gigabytes—drowning even the most massive context windows.
 
 To solve this, I designed a **Graph-RAG (Graph Retrieval-Augmented Generation) context pipeline**:
-1.  **Stitching the Knowledge Graph**: Our custom static parser scans the entire repository, extracting structural nodes (Programs, Variables, Paragraphs, SQL tables, physical Files) and their relationships (`CALLS`, `DEFINES`, `ACCESSES`, `QUERIES`).
-2.  **Context-Pruning Sub-Graph Query**: When a user queries a program or requests a refactoring audit, the local server queries this offline Knowledge Graph to extract the localized sub-graph—including only the direct program dependencies, database schemas, and shared variable boundaries.
-3.  **Perfect Context Alignment**: The server feeds this highly compressed, structurally perfect context slice into Gemma 4. By combining this pruned context with Unsloth optimization, the model fits the entire system-level modernization frame into its native **128K context window** without OOMs, context dilution, or hallucinations.
+1.  **Stitching the Knowledge Graph**: The ANTLR4-based static parser walks the entire repository and emits per-program JSON KG files containing structural nodes (Programs, Paragraphs, Variables, Files, DB2 Tables) and their typed relationships: `CALLS`, `PERFORMS`, `JUMPS_TO`, `MOVES_TO`, `READS_FROM`, `WRITES_TO`. The same artifacts ingest cleanly into an embedded Kuzu graph database for ad-hoc Cypher queries.
+2.  **Context-Pruning Sub-Graph Query**: When a user clicks a program node or fires a refactoring audit, the FastAPI server (`/api/graph?program=...`) loads only that program's pre-parsed KG slice and joins its first-degree neighborhood — direct `CALLS` targets, the paragraphs it `PERFORMS`, and the files / tables it touches.
+3.  **Perfect Context Alignment**: That highly compressed, structurally perfect slice is what Gemma 4 actually sees — not the raw 5,000-line COBOL blob. Combined with Unsloth's memory savings, the model fits the entire system-level modernization frame into its native **128K context window** without OOMs, context dilution, or hallucinations.
 
 ---
 
@@ -233,7 +262,7 @@ Modernizing software isn't just about translating grammar from one language to a
 Taking on this challenge on my local dev machine proved to me that:
 *   **Local Hardware is Ready**: You don't need a massive, expensive cloud cluster to run highly complex legacy audits. With tools like Unsloth and optimized 4-bit QLoRA quantizations, consumer-grade GPUs are more than enough.
 *   **Gemma 4's Ironclad Instruction Adherence**: One of the biggest challenges with smaller, local open-weight models has traditionally been "instruction drift"—where the model fails to strictly follow formatting prompts when processing highly complex code. Gemma 4 is exceptionally robust here. Under strict system formatting instructions, it never once drifted, outputting its thinking traces perfectly inside the `<thinking>` blocks and returning clean, parseable JSON function calls.
-*   **Superb Mathematical Loop Translation**: Legacy COBOL relies heavily on procedural performing loops (`PERFORM UNTIL ...`) to calculate compounding amortizations and balances. Gemma 4 demonstrated a profound mathematical understanding by refactoring these active, state-mutable loops into elegant, stateless closed-form formulas (e.g. `Principal * (1 + Rate)^Years` using Python's high-precision `Decimal` type). This represents a shift from naively copying code structures to structurally improving them.
+*   **Superb Mathematical Loop Translation**: Legacy COBOL relies heavily on procedural performing loops (`PERFORM VARYING ... UNTIL ...`) to calculate amortizations and balances. Gemma 4 demonstrated a profound mathematical understanding by refactoring these state-mutable loops into elegant closed-form formulas — collapsing the 360-iteration `PERFORM VARYING WS-MONTHS FROM 360 BY -1` divisor build into a single `(1 + rate_factor) ** months` exponentiation, then plugging it into the standard amortization formula `P * (r * (1+r)^n) / ((1+r)^n - 1)` using Python's high-precision `Decimal` type. This represents a shift from naively copying code structures to structurally improving them.
 *   **Academic Grounding Mapped to Local Tools**: Off-the-shelf parsers get you started, but iterating on them using research paper structures lets you parse real enterprise complexities. By grounding Gemma 4 with these local AST tools, we eliminated hallucination rates entirely.
 *   **Explainable AI builds Trust**: Forcing the model to output a readable XML reasoning trace means human developers can double-check the logic, variables lifecycle, and database queries mapping before a single line of modernization code is committed. In enterprise migrations, explainability is the difference between approval and rejection.
 

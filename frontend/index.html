@@ -35,7 +35,8 @@
                 <div class="control-group">
                     <label for="model-selector"><i class="fa-solid fa-brain"></i> Model Selection:</label>
                     <select id="model-selector" class="control-select">
-                        <option value="gemma4-2b" selected>Gemma 4 2B/4B (On-Device/Edge)</option>
+                        <option value="gemma4-unsloth" selected>Gemma 4 31B (Unsloth QLoRA Local)</option>
+                        <option value="gemma4-2b">Gemma 4 2B/4B (On-Device/Edge)</option>
                         <option value="gemma4-26b">Gemma 4 26B (High-Throughput MoE)</option>
                         <option value="gemma4-31b">Gemma 4 31B (Dense Auditing Engine)</option>
                     </select>
@@ -133,20 +134,27 @@
 
                         <!-- Graph Legend: Functionally Clustered -->
                         <div class="graph-legend">
+                            <div class="legend-section-title"><i class="fa-solid fa-calendar-days"></i> Orchestration (JCL)</div>
+                            <div class="legend-item"><span class="legend-dot color-job"></span> JCL Job (Batch)</div>
+                            <div class="legend-item"><span class="legend-dot color-step"></span> Step (EXEC PGM/PROC)</div>
+
+                            <div class="legend-section-separator"></div>
+
                             <div class="legend-section-title"><i class="fa-solid fa-code-branch"></i> Logic & Execution</div>
                             <div class="legend-item"><span class="legend-dot color-program"></span> Program (Control)</div>
                             <div class="legend-item"><span class="legend-dot color-paragraph"></span> Paragraph (Logic Segment)</div>
-                            
+
                             <div class="legend-section-separator"></div>
-                            
+
                             <div class="legend-section-title"><i class="fa-solid fa-memory"></i> State & Memory</div>
                             <div class="legend-item"><span class="legend-dot color-variable"></span> Local Registers & Vars</div>
-                            
+
                             <div class="legend-section-separator"></div>
-                            
+
                             <div class="legend-section-title"><i class="fa-solid fa-database"></i> Storage Boundaries</div>
                             <div class="legend-item"><span class="legend-dot color-file"></span> Physical Files</div>
-                            <div class="legend-item"><span class="legend-dot color-table"></span> Relational Tables</div>
+                            <div class="legend-item"><span class="legend-dot color-table"></span> DB2 Tables</div>
+                            <div class="legend-item"><span class="legend-dot color-dataset"></span> Cataloged DSN</div>
                         </div>
                     </div>
                 </div>

@@ -2,12 +2,24 @@ import os
 import re
 import json
 
+from backend.jcl_parser import JclParser
+
+
 class CobolParser:
-    def __init__(self, samples_dir=None, custom_kg_dir="/Users/yakarteek/code/personal/cobol-parser/python-parser/data/kg"):
+    def __init__(self, samples_dir=None, custom_kg_dir="/Users/yakarteek/code/personal/cobol-parser/python-parser/data/kg",
+                 jcl_llm_enrich=True):
         self.samples_dir = samples_dir
         self.custom_kg_dir = custom_kg_dir
+        self.jcl_parser = JclParser(samples_dir, llm_enrich=jcl_llm_enrich)
+        self._jcl_cache = None
         self.nodes = {}
         self.edges = []
+
+    def _jcl_graph(self):
+        """Lazy cached call to the JCL parser so we don't re-parse on every request."""
+        if self._jcl_cache is None:
+            self._jcl_cache = self.jcl_parser.parse_directory()
+        return self._jcl_cache
         
     def sanitize_line(self, line):
         """Removes COBOL sequence numbers (cols 1-6) and handles comments (col 7 is '*')."""
@@ -274,14 +286,21 @@ class CobolParser:
                 })
 
     def parse_directory(self):
-        """Scans the samples directory and parses all COBOL files."""
+        """Scans the samples directory and parses all COBOL + JCL files into a unified graph."""
         if not self.samples_dir or not os.path.exists(self.samples_dir):
             return {"nodes": [], "edges": []}
-            
+
         for file in os.listdir(self.samples_dir):
             if file.endswith(('.cbl', '.cob', '.cobol')):
                 self.parse_file(os.path.join(self.samples_dir, file))
-                
+
+        # Stitch in JCL orchestrations (Job / Step / Dataset nodes + EXECUTES edges).
+        jcl = self._jcl_graph()
+        for n in jcl["nodes"]:
+            self.nodes.setdefault(n["id"], n)
+        for e in jcl["edges"]:
+            self.edges.append(e)
+
         # Clean up any edges that link to non-existent nodes (e.g. external program calls not in the parsed directory)
         cleaned_edges = []
         for edge in self.edges:
@@ -299,7 +318,7 @@ class CobolParser:
                     }
                 }
             cleaned_edges.append(edge)
-            
+
         return {
             "nodes": list(self.nodes.values()),
             "edges": cleaned_edges
@@ -410,7 +429,7 @@ class CobolParser:
         # Fallback to local samples if no external KG files found
         if not nodes:
             return self.parse_directory()
-            
+
         # De-duplicate edges
         seen_edges = set()
         deduped_edges = []
@@ -431,21 +450,71 @@ class CobolParser:
                         }
                     }
                 deduped_edges.append(e)
-                
+
+        # Stitch JCL orchestrations on top of the corpus-level program graph.
+        jcl = self._jcl_graph()
+        for n in jcl["nodes"]:
+            nodes.setdefault(n["id"], n)
+        for e in jcl["edges"]:
+            if e["target"] not in nodes and e["type"] == "executes":
+                # Step → Program edge where the program isn't in the corpus KG;
+                # register a stub so the d3 canvas still renders the linkage.
+                nodes[e["target"]] = {
+                    "id": e["target"],
+                    "label": f"{e['target']}.CBL",
+                    "type": "program",
+                    "details": {
+                        "loc": 0,
+                        "complexity": 0,
+                        "riskIndex": 10,
+                        "description": f"Program '{e['target']}' invoked by JCL but not present in the corpus KG."
+                    }
+                }
+            deduped_edges.append(e)
+
         return {
             "nodes": list(nodes.values()),
             "edges": deduped_edges
         }
 
+    def _stitch_jcl_upstream(self, focus_program: str, nodes_list, edges_list):
+        """Appends any JCL Job/Step/Dataset triples that execute `focus_program`."""
+        jcl = self._jcl_graph()
+        focus_pg = focus_program.upper().replace(".CBL", "").replace(".COB", "")
+        jcl_node_ids = set()
+        existing_ids = {n.get("id") for n in nodes_list}
+
+        for e in jcl["edges"]:
+            if e["type"] == "executes" and (e["target"] or "").upper() == focus_pg:
+                step_id = e["source"]
+                jcl_node_ids.add(step_id)
+                edges_list.append(e)
+                for e2 in jcl["edges"]:
+                    if e2["type"] == "contains" and e2["target"] == step_id:
+                        jcl_node_ids.add(e2["source"])
+                        edges_list.append(e2)
+                    if e2["source"] == step_id and e2["type"] == "uses_dd":
+                        jcl_node_ids.add(e2["target"])
+                        edges_list.append(e2)
+
+        for n in jcl["nodes"]:
+            if n["id"] in jcl_node_ids and n["id"] not in existing_ids:
+                nodes_list.append(n)
+
     def get_program_graph(self, program_name):
         """
-        Loads the detailed program graph from the pre-parsed JSON files.
+        Loads the detailed program graph from the pre-parsed JSON files,
+        then stitches in any JCL Jobs/Steps that orchestrate this program.
         """
-        if not os.path.exists(self.custom_kg_dir):
-            return {"nodes": [], "edges": []}
-            
-        # Check standard file variations
         clean_name = program_name.upper().replace(".CBL", "").replace(".COB", "")
+
+        if not os.path.exists(self.custom_kg_dir):
+            # Even without the external KG, still surface JCL upstream.
+            empty = {"nodes": [], "edges": []}
+            self._stitch_jcl_upstream(clean_name, empty["nodes"], empty["edges"])
+            return empty
+
+        # Check standard file variations
         candidates = [
             f"{clean_name}.cbl.json",
             f"{clean_name}.cob.json",
@@ -453,14 +522,14 @@ class CobolParser:
             f"{clean_name}.COB.json",
             f"{program_name}.json"
         ]
-        
+
         target_file = None
         for cand in candidates:
             path = os.path.join(self.custom_kg_dir, cand)
             if os.path.exists(path):
                 target_file = path
                 break
-                
+
         if not target_file:
             # Fallback to local live parsing of samples
             sample_path = os.path.join(self.samples_dir, f"{clean_name}.cbl")
@@ -468,11 +537,13 @@ class CobolParser:
                 self.nodes = {}
                 self.edges = []
                 self.parse_file(sample_path)
-                return {
-                    "nodes": list(self.nodes.values()),
-                    "edges": self.edges
-                }
-            return {"nodes": [], "edges": []}
+                nodes_list = list(self.nodes.values())
+                edges_list = list(self.edges)
+                self._stitch_jcl_upstream(clean_name, nodes_list, edges_list)
+                return {"nodes": nodes_list, "edges": edges_list}
+            empty = {"nodes": [], "edges": []}
+            self._stitch_jcl_upstream(clean_name, empty["nodes"], empty["edges"])
+            return empty
             
         with open(target_file, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -510,7 +581,12 @@ class CobolParser:
                 "type": edge.get("type", "contains").lower(),
                 "label": edge.get("type", "CONTAINS").upper()
             })
-            
+
+        # JCL upstream stitch — surface any JCL Steps that EXECUTE this program
+        # plus their parent Jobs and DD datasets, so the right-hand audit view
+        # shows end-to-end orchestration: Job → Step → Program → Paragraphs.
+        self._stitch_jcl_upstream(clean_name, nodes, edges)
+
         return {
             "nodes": nodes,
             "edges": edges
