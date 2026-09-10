@@ -35,3 +35,7 @@
 - [x] Mass-parse validation: 6,191 COBOL files at 99.90% pass rate; 5,240 KG JSON artifacts emitted.
 - [x] LLM enrichment spot-check: 15 paragraph nodes across 5 real-world programs via local Qwen-3 8B.
 - [x] Author `README.md` for the contest repo; refresh the `cobol-parser` README with the validation table.
+- [x] Locate `GEMINI.md` in the project workspace (found at `/Users/yakarteek/.gemini/GEMINI.md`).
+- [x] Read `/Users/yakarteek/.gemini/GEMINI.md` to analyze current content and prepare improvements.
+- [x] Write optimized and restructured `GEMINI.md` file with improved prompt structures and tabular formatting.
+- [x] Refactor the platform/runtime statement to resolve the professional tone violation.
